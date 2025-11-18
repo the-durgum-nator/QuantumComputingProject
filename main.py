@@ -8,6 +8,11 @@ import os
 # Window item for our pyglet's "base" to work off of!
 window = pyglet.window.Window(width=800, height=800, caption='Pyglet 3D Example', resizable=True)
 
+# Create labels for axis markers
+x_label = pyglet.text.Label('X', font_size=14, x=0, y=0, color=(255, 0, 0, 255))
+y_label = pyglet.text.Label('Y', font_size=14, x=0, y=0, color=(0, 255, 0, 255))
+z_label = pyglet.text.Label('Z', font_size=14, x=0, y=0, color=(0, 0, 255, 255))
+
 # Default values for application start
 rot_x = 20.0   # rotation around X (degrees)
 rot_y = -30.0  # rotation around Y (degrees)
@@ -105,6 +110,27 @@ def draw_grid(size=10, step=1.0):
     glEnd()
 
 
+def project_3d_to_2d(x, y, z):
+    """Project 3D world coordinates to 2D screen coordinates"""
+    # Get the current model, projection, and viewport matrices
+    modelview = (GLdouble * 16)()
+    projection = (GLdouble * 16)()
+    viewport = (GLint * 4)()
+    
+    glGetDoublev(GL_MODELVIEW_MATRIX, modelview)
+    glGetDoublev(GL_PROJECTION_MATRIX, projection)
+    glGetIntegerv(GL_VIEWPORT, viewport)
+    
+    # Project the 3D point
+    win_x = GLdouble()
+    win_y = GLdouble()
+    win_z = GLdouble()
+    
+    gluProject(x, y, z, modelview, projection, viewport, win_x, win_y, win_z)
+    
+    return int(win_x.value), int(win_y.value)
+
+
 @window.event
 def on_resize(width, height):
     # Set viewport and perspective projection
@@ -123,7 +149,6 @@ def on_resize(width, height):
 def on_draw():
     global rot_x, rot_y, distance, pan_x, pan_y, vector_x, vector_y, vector_z
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-    
     glMatrixMode(GL_MODELVIEW)
     glLoadIdentity()
 
@@ -146,7 +171,42 @@ def on_draw():
     glColor3f(1.0, 1.0, 0.0)
     glVertex3f(0.0, 0.0, 0.0)
     glVertex3f(vector_x, vector_y, vector_z)
+
     glEnd()
+    
+    # Project 3D axis endpoints to 2D screen coordinates for labels
+    x_pos = project_3d_to_2d(2.2, 0.0, 0.0)
+    y_pos = project_3d_to_2d(0.0, 2.2, 0.0)
+    z_pos = project_3d_to_2d(0.0, 0.0, 2.2)
+    
+    # Switch to 2D mode for text rendering
+    glMatrixMode(GL_PROJECTION)
+    glPushMatrix()
+    glLoadIdentity()
+    glOrtho(0, window.width, 0, window.height, -1, 1)
+    glMatrixMode(GL_MODELVIEW)
+    glPushMatrix()
+    glLoadIdentity()
+    
+    # Disable depth test for text
+    glDisable(GL_DEPTH_TEST)
+    
+    # Draw the axis labels
+    x_label.x, x_label.y = x_pos
+    x_label.draw()
+    
+    y_label.x, y_label.y = y_pos
+    y_label.draw()
+    
+    z_label.x, z_label.y = z_pos
+    z_label.draw()
+    
+    # Re-enable depth test and restore matrices
+    glEnable(GL_DEPTH_TEST)
+    glPopMatrix()
+    glMatrixMode(GL_PROJECTION)
+    glPopMatrix()
+    glMatrixMode(GL_MODELVIEW)
 
 
 @window.event
