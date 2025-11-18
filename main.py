@@ -5,13 +5,15 @@ import math
 import threading
 import os
 
+from vector_utils import slerp_via_axis
+
 # Window item for our pyglet's "base" to work off of!
 window = pyglet.window.Window(width=800, height=800, caption='Pyglet 3D Example', resizable=True)
 
 # Create labels for axis markers
 x_label = pyglet.text.Label('X', font_size=14, x=0, y=0, color=(255, 0, 0, 255))
-y_label = pyglet.text.Label('Y', font_size=14, x=0, y=0, color=(0, 255, 0, 255))
-z_label = pyglet.text.Label('Z', font_size=14, x=0, y=0, color=(0, 0, 255, 255))
+y_label = pyglet.text.Label('Y', font_size=14, x=0, y=0, color=(0, 0, 255, 255))
+z_label = pyglet.text.Label('Z', font_size=14, x=0, y=0, color=(0, 255, 0, 255))
 
 # Default values for application start
 rot_x = 20.0   # rotation around X (degrees)
@@ -28,21 +30,22 @@ _last_mouse_y = 0
 # Vector components to display
 vector_x = 0.0
 vector_y = 0.0
-vector_z = 0.0
+vector_z = 1.0
 
 # Target components to translate to
 target_x = vector_x
 target_y = vector_y
 target_z = vector_z
 
-interpolation_speed = 0.1
+interpolation_speed = 0.02
+interpolation_t = 1.0  # Interpolation parameter (0 to 1)
 
 # Lock for thread-safe access to vector variables
 vector_lock = threading.Lock()
 
 def menu_thread():
     """Background thread for handling terminal menu"""
-    global target_x, target_y, target_z
+    global target_x, target_y, target_z, interpolation_t
     while True:
         try:
             os.system('cls' if os.name == 'nt' else 'clear')
@@ -60,6 +63,7 @@ def menu_thread():
                     target_x = float(values[0])
                     target_y = float(values[1])
                     target_z = float(values[2])
+                    interpolation_t = 0.0  # Reset interpolation when new target is set
 
                 print(f"Target vector set to ({target_x}, {target_y}, {target_z})")
             else:
@@ -147,7 +151,7 @@ def on_resize(width, height):
 
 @window.event
 def on_draw():
-    global rot_x, rot_y, distance, pan_x, pan_y, vector_x, vector_y, vector_z
+    global rot_x, rot_y, distance, pan_x, pan_y, vector_x, vector_y, vector_z, interpolation_t
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
     glMatrixMode(GL_MODELVIEW)
     glLoadIdentity()
@@ -157,10 +161,20 @@ def on_draw():
     glRotatef(rot_x, 1.0, 0.0, 0.0)
     glRotatef(rot_y, 0.0, 1.0, 0.0)
     
-    # Interpolate vector
-    vector_x += (target_x - vector_x) * interpolation_speed
-    vector_y += (target_y - vector_y) * interpolation_speed
-    vector_z += (target_z - vector_z) * interpolation_speed
+    # Store the starting position for SLERP
+    start_x, start_y, start_z = vector_x, vector_y, vector_z
+    
+    # Update interpolation parameter
+    if interpolation_t < 1.0:
+        interpolation_t = min(1.0, interpolation_t + interpolation_speed)
+        
+        # Use SLERP via X-axis for interpolation
+        vector_x, vector_y, vector_z = slerp_via_axis(
+            start_x, start_y, start_z,
+            target_x, target_y, target_z,
+            interpolation_t,
+            via_axis='x'
+        )
 
     # Draw grid first (as background)
     draw_grid(size=10, step=1.0)
@@ -170,14 +184,14 @@ def on_draw():
     glBegin(GL_LINES)
     glColor3f(1.0, 1.0, 0.0)
     glVertex3f(0.0, 0.0, 0.0)
-    glVertex3f(vector_x, vector_y, vector_z)
+    glVertex3f(vector_x, vector_z, vector_y)
 
     glEnd()
     
     # Project 3D axis endpoints to 2D screen coordinates for labels
     x_pos = project_3d_to_2d(2.2, 0.0, 0.0)
-    y_pos = project_3d_to_2d(0.0, 2.2, 0.0)
-    z_pos = project_3d_to_2d(0.0, 0.0, 2.2)
+    y_pos = project_3d_to_2d(0.0, 0.0, 2.2)
+    z_pos = project_3d_to_2d(0.0, 2.2, 0.0)
     
     # Switch to 2D mode for text rendering
     glMatrixMode(GL_PROJECTION)
