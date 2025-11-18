@@ -7,11 +7,14 @@ def _normalize_vector(x, y, z):
         return 0.0, 0.0, 0.0
     return x/length, y/length, z/length
 
-def slerp_via_axis(start_x, start_y, start_z, end_x, end_y, end_z, t, via_axis='x'):
+def slerp_via_axis(start_x, start_y, start_z, end_x, end_y, end_z, t, via_vector=None):
     """
-    Spherical linear interpolation via a specified axis.
-    via_axis: 'x', 'y', or 'z' - the axis to rotate through
+    Spherical linear interpolation via a specified direction.
+    via_vector: tuple (x, y, z) - the direction to rotate through.
+                For backward compatibility, can also be 'x', 'y', or 'z' string.
+                If None, uses standard SLERP (shortest path).
     """
+    
     # Normalize both vectors
     s_x, s_y, s_z = _normalize_vector(start_x, start_y, start_z)
     e_x, e_y, e_z = _normalize_vector(end_x, end_y, end_z)
@@ -34,13 +37,15 @@ def slerp_via_axis(start_x, start_y, start_z, end_x, end_y, end_z, t, via_axis='
     if abs(dot) > 0.9995:
         # For anti-parallel vectors, we need to find an intermediate point
         if dot < 0:  # Anti-parallel case
-            # Create intermediate vector along the specified axis
-            if via_axis == 'x':
-                mid_x, mid_y, mid_z = 1.0, 0.0, 0.0
-            elif via_axis == 'y':
-                mid_x, mid_y, mid_z = 0.0, 1.0, 0.0
-            else:  # 'z'
-                mid_x, mid_y, mid_z = 0.0, 0.0, 1.0
+            # Use the specified via_vector or default to perpendicular
+            if via_vector is None:
+                # Find a perpendicular vector automatically
+                if abs(s_x) < 0.9:
+                    mid_x, mid_y, mid_z = _normalize_vector(0.0, -s_z, s_y)
+                else:
+                    mid_x, mid_y, mid_z = _normalize_vector(-s_y, s_x, 0.0)
+            else:
+                mid_x, mid_y, mid_z = _normalize_vector(via_vector[0], via_vector[1], via_vector[2])
             
             # Interpolate in two steps: start -> axis -> end
             if t < 0.5:

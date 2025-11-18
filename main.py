@@ -39,33 +39,49 @@ target_z = vector_z
 
 interpolation_speed = 0.02
 interpolation_t = 1.0  # Interpolation parameter (0 to 1)
+rotation_phase = 0.0  # Phase between X (0.0) and Y (1.0) axis
 
 # Lock for thread-safe access to vector variables
 vector_lock = threading.Lock()
 
 def menu_thread():
     """Background thread for handling terminal menu"""
-    global target_x, target_y, target_z, interpolation_t
+    global target_x, target_y, target_z, interpolation_t, rotation_phase
     while True:
         try:
             os.system('cls' if os.name == 'nt' else 'clear')
             print("Hello, this is a prototype for CSC 4700's visualization problem here!")
+            print(f"Current rotation phase: {rotation_phase:.2f} (0=X-axis, 1=Y-axis)")
             
             print("/" * 22)
-            user_input = input("Enter vector as 'x y z' (or 'quit'): ")
+            vector_input = input("Enter vector 'x y z' | 'quit': ")
             print("/" * 22)
-            if user_input.strip().lower() == 'quit':
+            if vector_input.strip().lower() == 'quit':
                 pyglet.app.exit()
                 break
-            values = user_input.strip().split()
+
+            phase_input = input("Enter rotation phase (0.0 = X-axis, 1.0 = Y-axis) or press Enter for no phase change: ")
+
+            if phase_input.strip() != '':
+                try:
+                    phase_val = float(phase_input.strip())
+                    rotation_phase = max(0.0, min(1.0, phase_val))  # Clamp to [0, 1]
+                    print(f"Rotation phase set to: {rotation_phase:.2f}")
+                except ValueError:
+                    print("Invalid phase value. Please enter a number between 0 and 1.")
+            else:
+                rotation_phase = 0.0
+            
+            values = vector_input.strip().split()
             if len(values) == 3:
                 with vector_lock:
                     target_x = float(values[0])
                     target_y = float(values[1])
                     target_z = float(values[2])
-                    interpolation_t = 0.0  # Reset interpolation when new target is set
+                    interpolation_t = 0.0
 
                 print(f"Target vector set to ({target_x}, {target_y}, {target_z})")
+                print(f"Will rotate via phase {rotation_phase:.2f}")
             else:
                 print("Invalid format. Use: x y z")
         except (ValueError, EOFError):
@@ -168,12 +184,17 @@ def on_draw():
     if interpolation_t < 1.0:
         interpolation_t = min(1.0, interpolation_t + interpolation_speed)
         
-        # Use SLERP via X-axis for interpolation
+        # Compute rotation vector based on phase (blend between X and Y)
+        phase_x = 1.0 - rotation_phase  # More X at phase=0
+        phase_y = rotation_phase         # More Y at phase=1
+        rotation_vector = (phase_x, phase_y, 0.0)
+        
+        # Use SLERP with the computed rotation vector
         vector_x, vector_y, vector_z = slerp_via_axis(
             start_x, start_y, start_z,
             target_x, target_y, target_z,
             interpolation_t,
-            via_axis='x'
+            via_vector=rotation_vector
         )
 
     # Draw grid first (as background)
