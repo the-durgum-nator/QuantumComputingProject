@@ -4,16 +4,14 @@ from pyglet.window import key, mouse
 import math
 import threading
 import os
+import time
 
 from vector_utils import slerp_via_axis
+from button import Button
+from constants import WINDOW_WIDTH, WINDOW_HEIGHT
 
 # Window item for our pyglet's "base" to work off of!
-window = pyglet.window.Window(width=800, height=800, caption='Pyglet 3D Example', resizable=True)
-
-# Create labels for axis markers
-x_label = pyglet.text.Label('X', font_size=14, x=0, y=0, color=(255, 0, 0, 255))
-y_label = pyglet.text.Label('Y', font_size=14, x=0, y=0, color=(0, 0, 255, 255))
-z_label = pyglet.text.Label('Z', font_size=14, x=0, y=0, color=(0, 255, 0, 255))
+window = pyglet.window.Window(width=WINDOW_WIDTH, height=WINDOW_HEIGHT, caption='Pyglet 3D Example', resizable=False)
 
 # Default values for application start
 rot_x = 20.0   # rotation around X (degrees)
@@ -41,51 +39,71 @@ interpolation_speed = 0.02
 interpolation_t = 1.0  # Interpolation parameter (0 to 1)
 rotation_phase = 0.0  # Phase between X (0.0) and Y (1.0) axis
 
+# State management
+states_list = []
+current_state_index = 0
+
+buttons = []
+
+
+def prev_state():
+    global current_state_index, target_x, target_y, target_z, rotation_phase, interpolation_t
+    if len(states_list) > 0 and current_state_index > 0:
+        current_state_index -= 1
+        state = states_list[current_state_index]
+        with vector_lock:
+            target_x = state[0]
+            target_y = state[1]
+            target_z = state[2]
+            rotation_phase = state[3]
+            interpolation_t = 0.0
+
+def next_state():
+    global current_state_index, target_x, target_y, target_z, rotation_phase, interpolation_t
+    if len(states_list) > 0 and current_state_index < len(states_list) - 1:
+        current_state_index += 1
+        state = states_list[current_state_index]
+        with vector_lock:
+            target_x = state[0]
+            target_y = state[1]
+            target_z = state[2]
+            rotation_phase = state[3]
+            interpolation_t = 0.0
+
+def reset_state():
+    global current_state_index, target_x, target_y, target_z, rotation_phase, interpolation_t
+    if len(states_list) > 0:
+        current_state_index = 0
+        state = states_list[0]
+        with vector_lock:
+            target_x = state[0]
+            target_y = state[1]
+            target_z = state[2]
+            rotation_phase = state[3]
+            interpolation_t = 0.0
+
 # Lock for thread-safe access to vector variables
 vector_lock = threading.Lock()
 
-def menu_thread():
+def menu_thread(states=[]):
     """Background thread for handling terminal menu"""
     global target_x, target_y, target_z, interpolation_t, rotation_phase
-    while True:
-        try:
-            os.system('cls' if os.name == 'nt' else 'clear')
-            print("Hello, this is a prototype for CSC 4700's visualization problem here!")
-            print(f"Current rotation phase: {rotation_phase:.2f} (0=X-axis, 1=Y-axis)")
-            
-            print("/" * 22)
-            vector_input = input("Enter vector 'x y z' | 'quit': ")
-            print("/" * 22)
-            if vector_input.strip().lower() == 'quit':
-                pyglet.app.exit()
-                break
-
-            phase_input = input("Enter rotation phase (0.0 = X-axis, 1.0 = Y-axis) or press Enter for no phase change: ")
-
-            if phase_input.strip() != '':
-                try:
-                    phase_val = float(phase_input.strip())
-                    rotation_phase = max(0.0, min(1.0, phase_val))  # Clamp to [0, 1]
-                    print(f"Rotation phase set to: {rotation_phase:.2f}")
-                except ValueError:
-                    print("Invalid phase value. Please enter a number between 0 and 1.")
-            else:
-                rotation_phase = 0.0
-            
-            values = vector_input.strip().split()
-            if len(values) == 3:
-                with vector_lock:
-                    target_x = float(values[0])
-                    target_y = float(values[1])
-                    target_z = float(values[2])
-                    interpolation_t = 0.0
-
-                print(f"Target vector set to ({target_x}, {target_y}, {target_z})")
-                print(f"Will rotate via phase {rotation_phase:.2f}")
-            else:
-                print("Invalid format. Use: x y z")
-        except (ValueError, EOFError):
-            print("Invalid input, vector unchanged")
+    
+    time.sleep(1)
+    for state in states:
+        with vector_lock:
+            target_x = state[0]
+            target_y = state[1]
+            target_z = state[2]
+            rotation_phase = state[3]
+            interpolation_t = 0.0
+        
+        # Wait until interpolation is done
+        while True:
+            with vector_lock:
+                if interpolation_t >= 1.0:
+                    break
+            time.sleep(0.1)
 
 def draw_circle(radius, segments=32, axis='z'):
     """Draw a circle around the specified axis"""
@@ -105,37 +123,35 @@ def draw_circle(radius, segments=32, axis='z'):
 
 def draw_bloch_sphere(radius=1.0):
     """Draw a Bloch sphere with meridians and equator"""
-    # Draw transparent sphere first (behind wireframe)
-    
     glLineWidth(1.5)
     
-    # Draw equator (circle in XY plane, around Z axis)
+    # Draw equator
     glColor3f(0.5, 0.5, 0.5)
     draw_circle(radius, segments=64, axis='z')
     
-    # Draw prime meridian (circle in XZ plane, around Y axis)
+    # Draw prime meridian
     glColor3f(0.4, 0.4, 0.4)
     draw_circle(radius, segments=64, axis='y')
     
-    # Draw another meridian (circle in YZ plane, around X axis)
+    # Draw another meridian
     glColor3f(0.4, 0.4, 0.4)
     draw_circle(radius, segments=64, axis='x')
     
     
-    # Draw axes through sphere (X=red, Y=green, Z=blue)
+    # Draw axes through sphere
     glLineWidth(2.5)
     glBegin(GL_LINES)
-    # X axis - red
+    # X axis
     glColor3f(0.8, 0.2, 0.2)
     glVertex3f(-radius * 1.2, 0.0, 0.0)
     glVertex3f(radius * 1.2, 0.0, 0.0)
     
-    # Y axis - blue (Z in rendering space)
+    # Y axis
     glColor3f(0.2, 0.2, 0.8)
     glVertex3f(0.0, 0.0, -radius * 1.2)
     glVertex3f(0.0, 0.0, radius * 1.2)
     
-    # Z axis - green (Y in rendering space)
+    # Z axis
     glColor3f(0.2, 0.8, 0.2)
     glVertex3f(0.0, -radius * 1.2, 0.0)
     glVertex3f(0.0, radius * 1.2, 0.0)
@@ -144,7 +160,7 @@ def draw_bloch_sphere(radius=1.0):
 
 def draw_state_vector(vector_x, vector_y, vector_z):
     """Draw the quantum state vector with arrowhead, extending beyond the Bloch sphere"""
-    # Normalize vector and extend it slightly beyond the sphere
+
     vec_length = math.sqrt(vector_x**2 + vector_y**2 + vector_z**2)
     if vec_length > 1e-6:
         # Normalize
@@ -152,21 +168,21 @@ def draw_state_vector(vector_x, vector_y, vector_z):
         norm_y = vector_y / vec_length
         norm_z = vector_z / vec_length
         
-        # Extend by 15% beyond unit sphere
+        # Extend by 15% beyond unit sphere to see the arrow
         extended_x = norm_x * 1.15
         extended_y = norm_y * 1.15
         extended_z = norm_z * 1.15
     else:
         extended_x, extended_y, extended_z = vector_x, vector_y, vector_z
     
-    # Draw state vector (the quantum state) - extended version
+    # Draw state vector
     glLineWidth(4.0)
     glBegin(GL_LINES)
-    glColor3f(1.0, 0.8, 0.0)  # Golden color for state vector
+    glColor3f(1.0, 0.8, 0.0)
     glVertex3f(0.0, 0.0, 0.0)
     glVertex3f(extended_x, extended_z, extended_y)
 
-    # draw arrowhead
+    # draw arrow
     arrow_length = 0.1
     dir_x = extended_x
     dir_y = extended_z
@@ -251,6 +267,11 @@ def draw_axis_labels():
     # Disable depth test for text
     glDisable(GL_DEPTH_TEST)
     
+    # Create labels for axis markers
+    x_label = pyglet.text.Label('X', font_size=14, x=0, y=0, color=(255, 0, 0, 255))
+    y_label = pyglet.text.Label('Y', font_size=14, x=0, y=0, color=(0, 0, 255, 255))
+    z_label = pyglet.text.Label('Z', font_size=14, x=0, y=0, color=(0, 255, 0, 255))
+
     # Draw the axis labels
     x_label.x, x_label.y = x_pos
     x_label.draw()
@@ -267,6 +288,13 @@ def draw_axis_labels():
     glMatrixMode(GL_PROJECTION)
     glPopMatrix()
     glMatrixMode(GL_MODELVIEW)
+
+
+def init_buttons():
+    prev_button = Button(20, 20, 40, 40, "<", prev_state)
+    next_button = Button(70, 20, 40, 40, ">", next_state)
+    reset_button = Button(120, 20, 100, 40, "Reset", reset_state)
+    buttons.extend([prev_button, next_button, reset_button])
 
 
 @window.event
@@ -321,12 +349,29 @@ def on_draw():
     
     draw_axis_labels()
 
+    for button in buttons:
+        button.draw()
+    
 
 @window.event
 def on_mouse_press(x, y, button, modifiers):
     global _last_mouse_x, _last_mouse_y
     _last_mouse_x = x
     _last_mouse_y = y
+    
+    # Check if any button was clicked
+    if button == mouse.LEFT:
+        for btn in buttons:
+            if btn.contains(x, y):
+                btn.action()
+                return
+
+
+@window.event
+def on_mouse_motion(x, y, dx, dy):
+    """Handle mouse motion for button hover effects"""
+    for btn in buttons:
+        btn.hovered = btn.contains(x, y)
 
 
 @window.event
@@ -386,16 +431,40 @@ def update(dt):
     pass  # Triggers continuous redraw for smooth interpolation
 
 
+def visualize(states):
+    global states_list, current_state_index, target_x, target_y, target_z, rotation_phase, interpolation_t
+    states_list = [[0.0, 0.0, 0.1, 0.0]] + states
+    
+    # Initialize to first state if available
+    if len(states_list) > 0:
+        current_state_index = 0
+        state = states_list[0]
+        target_x = state[0]
+        target_y = state[1]
+        target_z = state[2]
+        rotation_phase = state[3]
+        interpolation_t = 0.0
+
+    init_buttons()
+    
+    # thread = threading.Thread(target=menu_thread, args=(states,), daemon=True)
+    # thread.start()
+
+    pyglet.clock.schedule_interval(update, 1/30.0)
+
+    pyglet.app.run()
+
 if __name__ == "__main__":
     # GL setup
     glEnable(GL_DEPTH_TEST)
     glClearColor(0.1, 0.1, 0.1, 1.0)
 
-    # Start input thread
-    thread = threading.Thread(target=menu_thread, daemon=True)
-    thread.start()
+    # Example states to visualize
+    states = [
+                [1.0, 0.0, 0.0, 0.5],
+                [0.0, 1.0, 0.0, 1.0],
+                [1.0, 0.0, 1.0, 0.0]
+            ]
+    
+    visualize(states)
 
-
-    pyglet.clock.schedule_interval(update, 1/30.0)
-
-    pyglet.app.run()
