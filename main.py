@@ -250,6 +250,15 @@ def project_3d_to_2d(x, y, z):
 
 def draw_axis_labels():
     """Draw the X, Y, Z axis labels in 2D screen space"""
+
+    try:
+        # Create labels for axis markers
+        x_label = pyglet.text.Label('X', font_size=14, x=0, y=0, color=(255, 0, 0, 255))
+        y_label = pyglet.text.Label('Y', font_size=14, x=0, y=0, color=(0, 0, 255, 255))
+        z_label = pyglet.text.Label('Z', font_size=14, x=0, y=0, color=(0, 255, 0, 255))
+    except Exception as e:
+        print(f"Error creating axis labels. Skipping for now.")
+        return
     # Project 3D axis endpoints to 2D screen coordinates for labels
     x_pos = project_3d_to_2d(1.4, 0.0, 0.0)
     y_pos = project_3d_to_2d(0.0, 0.0, 1.4)
@@ -266,11 +275,6 @@ def draw_axis_labels():
     
     # Disable depth test for text
     glDisable(GL_DEPTH_TEST)
-    
-    # Create labels for axis markers
-    x_label = pyglet.text.Label('X', font_size=14, x=0, y=0, color=(255, 0, 0, 255))
-    y_label = pyglet.text.Label('Y', font_size=14, x=0, y=0, color=(0, 0, 255, 255))
-    z_label = pyglet.text.Label('Z', font_size=14, x=0, y=0, color=(0, 255, 0, 255))
 
     # Draw the axis labels
     x_label.x, x_label.y = x_pos

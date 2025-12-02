@@ -11,9 +11,12 @@ class Button:
         self.height = height
         self.text = text
         self.action = action
-        self.label = pyglet.text.Label(text, font_size=12, x=x + width//2, y=y + height//2,
-                                       anchor_x='center', anchor_y='center',
-                                       color=(255, 255, 255, 255))
+
+        try:
+            self.label = pyglet.text.Label(text, font_size=12, x=x + width//2, y=y + height//2, anchor_x='center', anchor_y='center', color=(255, 255, 255, 255))
+        except Exception as e:
+            print(f"Error creating label. Skipping For now.")
+        
         self.hovered = False
     
     def contains(self, x, y):
@@ -56,7 +59,9 @@ class Button:
         # Keep 2D projection for label
         # Draw label on top (still in 2D mode)
         glColor4f(1.0, 1.0, 1.0, 1.0)  # Reset color to white for text
-        self.label.draw()
+
+        if hasattr(self, 'label'):
+            self.label.draw()
         
         glPopMatrix()
         glMatrixMode(GL_PROJECTION)
