@@ -49,7 +49,6 @@ class Qubit:
         #result = matrix @ vector
         #self.amp_a = result[0]
         #self.amp_b = result[1] 
-        
         self.__update()
         return self.coords 
     
@@ -61,42 +60,45 @@ class Qubit:
         #self.phi = np.pi - self.phi
         
         #matrix multiplication method
-        matrix = np.array([[np.cos(angle/2)+0j,-np.sin(angle/2)+0j],[np.sin(angle/2)+0j,np.cos(angle/2)+0j]])
-        vector = self.state_vector()
-        result = matrix @ vector
-        self.amp_a = result[0]
-        self.amp_b = result[1] 
+        if(not self.is_collapsed):
+            matrix = np.array([[np.cos(angle/2)+0j,-np.sin(angle/2)+0j],[np.sin(angle/2)+0j,np.cos(angle/2)+0j]])
+            vector = self.state_vector()
+            result = matrix @ vector
+            self.amp_a = result[0]
+            self.amp_b = result[1] 
         
         self.__update()
         return self.coords
        
     
     def rz(self,angle,clockwise = True):  #rotate Z by angle
-       
-        #bloch angle rotation method
-        self.phi = angle + self.phi
-        
-        #matrix multiplication method
-        matrix = np.array([[1,0],[0,-1]])
-        vector = self.state_vector()
-        result = matrix @ vector
-        self.amp_a = result[0]
-        self.amp_b = result[1] 
+        if(not self.is_collapsed):
+            #bloch angle rotation method
+            self.phi = angle + self.phi
+            
+            #matrix multiplication method
+            matrix = np.array([[1,0],[0,-1]])
+            vector = self.state_vector()
+            result = matrix @ vector
+            self.amp_a = result[0]
+            self.amp_b = result[1] 
         
         self.__update()
         return self.coords 
     
     def x(self):  #rotate 180 around x-axis, theta' = pi - theta, phi' = -phi
-        #bloch angle rotation method
-        self.theta = np.pi - self.theta
-        self.phi = -self.phi
         
-        #matrix multiplication method
-        matrix = np.array([[1,0],[0,1]])
-        vector = self.state_vector()
-        result = matrix @ vector
-        self.amp_a = result[0]
-        self.amp_b = result[1] 
+        if(not self.is_collapsed):
+            #bloch angle rotation method
+            self.theta = np.pi - self.theta
+            self.phi = -self.phi
+            
+            #matrix multiplication method
+            matrix = np.array([[1,0],[0,1]])
+            vector = self.state_vector()
+            result = matrix @ vector
+            self.amp_a = result[0]
+            self.amp_b = result[1] 
         
         self.__update()
         return self.coords  
@@ -111,27 +113,27 @@ class Qubit:
     
     
     def h(self):
-        #matrix multiplication method
-        matrix = 1/np.sqrt(2) * np.array([[1,1],[1,-1]])
-        vector = self.state_vector()
-        result = matrix @ vector
-        self.amp_a = result[0]
-        self.amp_b = result[1] 
+        if(not self.is_collapsed):
+            #matrix multiplication method
+            matrix = 1/np.sqrt(2) * np.array([[1,1],[1,-1]])
+            vector = self.state_vector()
+            result = matrix @ vector
+            self.amp_a = result[0]
+            self.amp_b = result[1] 
         
         self.__update()
         return self.coords 
     
     def p(self, angle):
-        matrix = np.array[[1,0][0,np.exp(1j*angle)]]
-        vector = self.state_vector()
-        
-        result = matrix @ vector
-        self.amp_a = result[0]
-        self.amp_b = result[1] 
-        
+        if(not self.is_collapsed):
+            matrix = np.array[[1,0][0,np.exp(1j*angle)]]
+            vector = self.state_vector()
+            
+            result = matrix @ vector
+            self.amp_a = result[0]
+            self.amp_b = result[1] 
         self.__update()
         return self.coords 
-        
     
     def s(self):
         return self.p(np.pi)
@@ -141,21 +143,23 @@ class Qubit:
     
     def measure(self): #collapses qubit state to either |0> or |1> based on ampltiude
         
-        assert not self.is_collapsed, "This qubit has already been measured"
-        prob_0 = abs(self.amp_a)**2
-        if(random.random()<=prob_0):
-            self.amp_a = 1
-            self.amp_b = 0
-            self.theta = 0
-            self.phi = 0
-            self.coords = (0,0,1)
-        else:
-            self.amp_a = 0
-            self.amp_b = 1
-            self.theta = np.pi
-            self.phi = 0
-            self.coords = (0,0,-1)
-        self.is_collapsed = True
+        if(not self.is_collapsed):
+            prob_0 = abs(self.amp_a)**2
+            if(random.random()<=prob_0):
+                self.amp_a = 1
+                self.amp_b = 0
+                self.theta = 0
+                self.phi = 0
+                self.coords = (0,0,1)
+            else:
+                self.amp_a = 0
+                self.amp_b = 1
+                self.theta = np.pi
+                self.phi = 0
+                self.coords = (0,0,-1)
+            self.is_collapsed = True
+        self.__update()
+        return self.coords
     
     # PRINTING AND REPRESENTATIONS
     
