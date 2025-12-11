@@ -5,10 +5,12 @@ import math
 import threading
 import os
 import time
+import numpy as np
 
 from vector_utils import slerp_via_axis
 from button import Button
 from constants import WINDOW_WIDTH, WINDOW_HEIGHT
+from qubit import Qubit
 
 # Window item for our pyglet's "base" to work off of!
 window = pyglet.window.Window(width=WINDOW_WIDTH, height=WINDOW_HEIGHT, caption='Pyglet 3D Example', resizable=False)
@@ -40,47 +42,95 @@ interpolation_t = 1.0  # Interpolation parameter (0 to 1)
 rotation_phase = 0.0  # Phase between X (0.0) and Y (1.0) axis
 
 # State management
-states_list = []
+quantum_circuit = Qubit(1,0)  # Initialize to |0> state
+states_list = [[0.0, 0.0, 1.0, 0.0]]  # Generated from circuit execution
 current_state_index = 0
+is_measured = False  # Track if circuit has been measured
 
 buttons = []
 
 
-def prev_state():
-    global current_state_index, target_x, target_y, target_z, rotation_phase, interpolation_t
-    if len(states_list) > 0 and current_state_index > 0:
-        current_state_index -= 1
-        state = states_list[current_state_index]
-        with vector_lock:
-            target_x = state[0]
-            target_y = state[1]
-            target_z = state[2]
-            rotation_phase = state[3]
-            interpolation_t = 0.0
+def execute_circuit(circuit):
+    """Execute quantum circuit and return list of states [x, y, z, phase]"""
+    states = []
+    q = Qubit(1, 0)  # Initialize to |0> state
+    
+    # Add initial state
+    x, y, z = q.coords
+    phase = q.phi / (2 * np.pi)  # Normalize phase to [0, 1]
+    states.append([x, y, z, phase])
+    
+    # Execute each gate and capture state
+    for gate_op in circuit:
+        gate_name = gate_op[0]
+        states.append(apply_gate(gate_name))
+    
+    return states
 
-def next_state():
-    global current_state_index, target_x, target_y, target_z, rotation_phase, interpolation_t
-    if len(states_list) > 0 and current_state_index < len(states_list) - 1:
-        current_state_index += 1
-        state = states_list[current_state_index]
-        with vector_lock:
-            target_x = state[0]
-            target_y = state[1]
-            target_z = state[2]
-            rotation_phase = state[3]
-            interpolation_t = 0.0
+def apply_gate(gate_name): 
+    if gate_name.lower() == 'h':
+        quantum_circuit.h()
+    elif gate_name.lower() == 'x':
+        quantum_circuit.x()
+    elif gate_name.lower() == 'z':
+        quantum_circuit.z()
+    elif gate_name.lower() == 's':
+        quantum_circuit.s()
+    elif gate_name.lower() == 't':
+        quantum_circuit.t()
+    
+    # Capture state after gate
+    x, y, z = Qubit.amp_to_cartesian(quantum_circuit.amp_a, quantum_circuit.amp_b)
+    phase = quantum_circuit.phi / (2 * np.pi)  # Normalize phase to [0, 1]
+    return [x, y, z, phase]
 
-def reset_state():
+def reset_circuit():
+    global quantum_circuit, states_list, current_state_index, is_measured, target_x, target_y, target_z, rotation_phase, interpolation_t
+    quantum_circuit = Qubit(1, 0)  # Reset to |0> state
+    states_list = [[0.0, 0.0, 1.0, 0.0]]
+    current_state_index = 0
+    is_measured = False  # Reset measurement flag
+    
+    # Reset to initial state
+    with vector_lock:
+        target_x = 0.0
+        target_y = 0.0
+        target_z = 1.0
+        rotation_phase = 0.0
+        interpolation_t = 0.0
+
+def change_state(direction):
+    """Change state by direction: -1 for previous, 1 for next, 0 for reset"""
     global current_state_index, target_x, target_y, target_z, rotation_phase, interpolation_t
-    if len(states_list) > 0:
-        current_state_index = 0
-        state = states_list[0]
-        with vector_lock:
-            target_x = state[0]
-            target_y = state[1]
-            target_z = state[2]
-            rotation_phase = state[3]
-            interpolation_t = 0.0
+    
+    if len(states_list) == 0:
+        return
+    
+    # Calculate new index based on direction
+    if direction == 0:  # Reset
+        new_index = 0
+    elif direction == -1:  # Previous
+        if current_state_index > 0:
+            new_index = current_state_index - 1
+        else:
+            return  # Already at first state
+    elif direction == 1:  # Next
+        if current_state_index < len(states_list) - 1:
+            new_index = current_state_index + 1
+        else:
+            return  # Already at last state
+    else:
+        return
+    
+    current_state_index = new_index
+    state = states_list[current_state_index]
+    with vector_lock:
+        target_x = state[0]
+        target_y = state[1]
+        target_z = state[2]
+        rotation_phase = state[3]
+        interpolation_t = 0.0
+
 
 # Lock for thread-safe access to vector variables
 vector_lock = threading.Lock()
@@ -248,6 +298,107 @@ def project_3d_to_2d(x, y, z):
     return int(win_x.value), int(win_y.value)
 
 
+def format_complex(c, precision=3):
+    """Format complex number for display in bra-ket notation"""
+    real = c.real
+    imag = c.imag
+    
+    # Handle very small numbers as zero
+    if abs(real) < 1e-10:
+        real = 0.0
+    if abs(imag) < 1e-10:
+        imag = 0.0
+    
+    # Format the output
+    if imag == 0:
+        return f"{real:.{precision}f}"
+    elif real == 0:
+        if imag == 1.0:
+            return "i"
+        elif imag == -1.0:
+            return "-i"
+        else:
+            return f"{imag:.{precision}f}i"
+    else:
+        if imag > 0:
+            if imag == 1.0:
+                return f"{real:.{precision}f}+i"
+            else:
+                return f"{real:.{precision}f}+{imag:.{precision}f}i"
+        else:
+            if imag == -1.0:
+                return f"{real:.{precision}f}-i"
+            else:
+                return f"{real:.{precision}f}{imag:.{precision}f}i"
+
+
+def draw_state_notation():
+    """Draw the current quantum state in bra-ket notation"""
+    # Get amplitudes from quantum circuit
+    amp_a = quantum_circuit.amp_a
+    amp_b = quantum_circuit.amp_b
+    
+    # Format the state
+    coeff_0 = format_complex(amp_a)
+    coeff_1 = format_complex(amp_b)
+    
+    # Build the state string
+    state_str = f"|ψ⟩ = {coeff_0}|0⟩"
+    
+    # Add the second term
+    if amp_b.real >= 0 and amp_b.imag >= 0:
+        if abs(amp_b) > 1e-10:
+            state_str += f" + {coeff_1}|1⟩"
+    else:
+        if abs(amp_b) > 1e-10:
+            state_str += f" + {coeff_1}|1⟩"
+    
+    # If measured, show the collapsed state
+    if is_measured:
+        if abs(amp_a - 1.0) < 1e-10:
+            state_str = "|ψ⟩ = |0⟩ (measured)"
+        else:
+            state_str = "|ψ⟩ = |1⟩ (measured)"
+    
+    try:
+        # Create label for state display
+        state_label = pyglet.text.Label(
+            state_str,
+            font_size=16,
+            x=window.width // 2,
+            y=window.height - 30,
+            anchor_x='center',
+            anchor_y='center',
+            color=(255, 255, 255, 255),
+            bold=True
+        )
+    except Exception as e:
+        print(f"Error creating state label: {e}")
+        return
+    
+    # Switch to 2D mode for text rendering
+    glMatrixMode(GL_PROJECTION)
+    glPushMatrix()
+    glLoadIdentity()
+    glOrtho(0, window.width, 0, window.height, -1, 1)
+    glMatrixMode(GL_MODELVIEW)
+    glPushMatrix()
+    glLoadIdentity()
+    
+    # Disable depth test for text
+    glDisable(GL_DEPTH_TEST)
+    
+    # Draw the state label
+    state_label.draw()
+    
+    # Restore previous state
+    glPopMatrix()
+    glMatrixMode(GL_PROJECTION)
+    glPopMatrix()
+    glMatrixMode(GL_MODELVIEW)
+    glEnable(GL_DEPTH_TEST)
+
+
 def draw_axis_labels():
     """Draw the X, Y, Z axis labels in 2D screen space"""
 
@@ -293,12 +444,63 @@ def draw_axis_labels():
     glPopMatrix()
     glMatrixMode(GL_MODELVIEW)
 
+def add_gate(gate_name):
+    """Add a gate operation to the quantum circuit"""
+    global current_state_index, target_x, target_y, target_z, rotation_phase, interpolation_t
+    
+    if is_measured:
+        return  # Cannot add gates after measurement
+    
+    states_list.append(apply_gate(gate_name))
+    
+    # Move to the newly added state
+    current_state_index = len(states_list) - 1
+    state = states_list[current_state_index]
+    with vector_lock:
+        target_x = state[0]
+        target_y = state[1]
+        target_z = state[2]
+        rotation_phase = state[3]
+        interpolation_t = 0.0
+
+
+def measure_circuit():
+    """Measure the quantum circuit and collapse to definite state"""
+    global is_measured, current_state_index, target_x, target_y, target_z, rotation_phase, interpolation_t
+    
+    if is_measured:
+        return  # Already measured
+    
+    quantum_circuit.measure()
+    is_measured = True
+    
+    # Add the collapsed state
+    x, y, z = quantum_circuit.coords
+    phase = quantum_circuit.phi / (2 * np.pi)
+    states_list.append([x, y, z, phase])
+    
+    # Move to the measured state
+    current_state_index = len(states_list) - 1
+    state = states_list[current_state_index]
+    with vector_lock:
+        target_x = state[0]
+        target_y = state[1]
+        target_z = state[2]
+        rotation_phase = state[3]
+        interpolation_t = 0.0
+
 
 def init_buttons():
-    prev_button = Button(20, 20, 40, 40, "<", prev_state)
-    next_button = Button(70, 20, 40, 40, ">", next_state)
-    reset_button = Button(120, 20, 100, 40, "Reset", reset_state)
-    buttons.extend([prev_button, next_button, reset_button])
+    prev_button = Button(20, 20, 40, 40, "<", lambda: change_state(-1))
+    next_button = Button(70, 20, 40, 40, ">", lambda: change_state(1))
+    reset_button = Button(120, 20, 100, 40, "Reset", lambda: reset_circuit())
+    h_gate_button = Button(240, 20, 60, 40, "H", lambda: add_gate('h'))
+    x_gate_button = Button(310, 20, 60, 40, "X", lambda: add_gate('x'))
+    z_gate_button = Button(380, 20, 60, 40, "Z", lambda: add_gate('z'))
+    s_gate_button = Button(450, 20, 60, 40, "S", lambda: add_gate('s'))
+    t_gate_button = Button(520, 20, 60, 40, "T", lambda: add_gate('t'))
+    measure_button = Button(590, 20, 80, 40, "Measure", lambda: measure_circuit())
+    buttons.extend([prev_button, next_button, reset_button, h_gate_button, x_gate_button, z_gate_button, s_gate_button, t_gate_button, measure_button])
 
 
 @window.event
@@ -352,8 +554,13 @@ def on_draw():
     draw_state_vector(vector_x, vector_y, vector_z)
     
     draw_axis_labels()
+    
+    draw_state_notation()
 
-    for button in buttons:
+    for i, button in enumerate(buttons):
+        # Hide gate buttons (indices 3, 4, 5) when measured
+        if is_measured and i in range(3, len(buttons) - 1):
+            continue
         button.draw()
     
 
@@ -421,12 +628,11 @@ def on_mouse_scroll(x, y, scroll_x, scroll_y):
 def on_key_press(symbol, modifiers):
     global rot_x, rot_y, distance, pan_x, pan_y, vector_x, vector_y, vector_z, target_x, target_y, target_z
     if symbol == key.R:
-        # Reset view
-        rot_x = startx
-        rot_y = starty
-        distance = startdist
-        pan_x = 0.0
-        pan_y = 0.0
+        reset_circuit()
+    elif symbol == key.LEFT:
+        change_state(-1)
+    elif symbol == key.RIGHT:
+        change_state(1)
     # elif symbol == key.ESCAPE:
     #     window.close()
 
@@ -435,9 +641,12 @@ def update(dt):
     pass  # Triggers continuous redraw for smooth interpolation
 
 
-def visualize(states):
-    global states_list, current_state_index, target_x, target_y, target_z, rotation_phase, interpolation_t
-    states_list = [[0.0, 0.0, 0.1, 0.0]] + states
+def visualize():
+    """Visualize a quantum circuit. Circuit is a list of gate operations.
+    Each gate is a tuple: ('gate_name',) or ('gate_name', angle) for parametric gates.
+    Example: [('H',), ('RX', np.pi/4), ('RY', np.pi/2)]
+    """
+    global quantum_circuit, states_list, current_state_index, target_x, target_y, target_z, rotation_phase, interpolation_t
     
     # Initialize to first state if available
     if len(states_list) > 0:
@@ -463,12 +672,8 @@ if __name__ == "__main__":
     glEnable(GL_DEPTH_TEST)
     glClearColor(0.1, 0.1, 0.1, 1.0)
 
-    # Example states to visualize
-    states = [
-                [1.0, 0.0, 0.0, 0.5],
-                [0.0, 1.0, 0.0, 1.0],
-                [1.0, 0.0, 1.0, 0.0]
-            ]
+    # Example quantum circuit to visualize
+    # Each gate is a tuple: ('gate_name',) or ('gate_name', angle)
     
-    visualize(states)
+    visualize()
 

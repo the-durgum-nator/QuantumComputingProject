@@ -34,7 +34,7 @@ class Qubit:
         self.phi = angles[1]
         
         #update coords
-        self.coords = Qubit.amp_to_cartesian(self.amp_a,self.amp_a)
+        self.coords = Qubit.amp_to_cartesian(self.amp_a,self.amp_b)
         
         
     def rx(self,angle,clockwise = True): #rotate x by angle
@@ -87,12 +87,9 @@ class Qubit:
         return self.coords 
     
     def x(self):  #rotate 180 around x-axis, theta' = pi - theta, phi' = -phi
-        #bloch angle rotation method
-        self.theta = np.pi - self.theta
-        self.phi = -self.phi
         
         #matrix multiplication method
-        matrix = np.array([[1,0],[0,1]])
+        matrix = np.array([[0,1],[1,0]])
         vector = self.state_vector()
         result = matrix @ vector
         self.amp_a = result[0]
@@ -107,7 +104,7 @@ class Qubit:
        pass    
     
     def z(self): #Z Gate - rotate 180 around z, theta' = theta, phi' = pi + phi
-        return self.rz(np.pi)
+        return self.rz(np.pi, clockwise=False)
     
     
     def h(self):
@@ -122,7 +119,7 @@ class Qubit:
         return self.coords 
     
     def p(self, angle):
-        matrix = np.array[[1,0][0,np.exp(1j*angle)]]
+        matrix = np.array([[1,0],[0,np.exp(1j*angle)]])
         vector = self.state_vector()
         
         result = matrix @ vector
@@ -134,10 +131,10 @@ class Qubit:
         
     
     def s(self):
-        return self.p(np.pi)
+        return self.p(np.pi/2)
     
     def t(self):
-        return self.p(np.pi/2)
+        return self.p(np.pi/4)
     
     def measure(self): #collapses qubit state to either |0> or |1> based on ampltiude
         
@@ -161,7 +158,9 @@ class Qubit:
     
     def __str__(self):
         #\nBra-Ket: {f"({self.amp_a.real:.0f}+{self.amp_a.imag:.0f}j)"}|0> + {f"({self.amp_b.real:.0f}+{self.amp_b.imag:.0f}j)"}|1>\n
-        return f"Qubit Representations:\nState Vector: {self.state_vector()}\nBloch Angles: θ = {f"{round(self.theta,5):.3g}"} φ = {f"{round(self.phi,5):.3g}\nCartesian Coords: ({round(self.coords[0],3)}, {round(self.coords[1],3)}, {round(self.coords[2],3)})\n"}"
+        theta_str = f"{round(self.theta, 5):.3g}"
+        phi_str = f"{round(self.phi, 5):.3g}"
+        return f"Qubit Representations:\nState Vector: {self.state_vector()}\nBloch Angles: θ = {theta_str} φ = {phi_str}\nCartesian Coords: ({round(self.coords[0],3)}, {round(self.coords[1],3)}, {round(self.coords[2],3)})\n"
     
     def state_vector(self): 
         return self.amp_a * self.BASE_0 + self.amp_b * self.BASE_1 
@@ -176,18 +175,32 @@ class Qubit:
     
     def spherical_to_cartesian(theta,phi):
         x = np.sin(theta) * np.cos(phi)
-        y = np.sin(phi) * np.cos(theta)
+        y = np.sin(theta) * np.sin(phi)
         z = np.cos(theta)
         return (x,y,z)
     
     def amp_to_spherical(amp_a,amp_b): # phi not correct, has issues when theta is 0 and amp_a = 1
-        theta = (2*np.arccos(amp_a)).real
-        phi = phase(amp_b) - phase(amp_a) #np.log(amp_b/np.sin(theta/2))/1j
-        return(theta,phi) 
+        # Remove global phase by normalizing to make amp_a real and positive
+        if abs(amp_a) > 1e-10:
+            global_phase = phase(amp_a)
+            amp_a = amp_a * np.exp(-1j * global_phase)
+            amp_b = amp_b * np.exp(-1j * global_phase)
+        
+        # Now calculate theta and phi
+        theta = (2 * np.arccos(np.clip(abs(amp_a), -1, 1))).real
+        
+        # Calculate phi from amp_b
+        if abs(np.sin(theta/2)) > 1e-10:
+            phi = phase(amp_b)
+        else:
+            phi = 0.0
+        
+        return(-theta, -phi) 
     
     def amp_to_cartesian(amp_a,amp_b):
-        spherical = Qubit.amp_to_spherical(amp_a,amp_b)
-        return Qubit.spherical_to_cartesian(spherical[0],spherical[1])
+        spherical = Qubit.amp_to_spherical(amp_a, amp_b)
+        cartesian = Qubit.spherical_to_cartesian(spherical[0],spherical[1])
+        return cartesian
     
     def cartesian_to_spherical(x,y,z):
         pass
